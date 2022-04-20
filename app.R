@@ -43,7 +43,7 @@ app2 <- shinyApp(
     output$map1 = renderPlot({
       sub1<-n2[n2$NIBRS_Offe==input$crime,]
       
-      p1 <- crimeplot.fun(ds=sub1,select.crimes=input$crime,
+      p1 <- crimeplot.fun(ds=sub1,
                           opacity1=input$opacity)
       p1
     })
