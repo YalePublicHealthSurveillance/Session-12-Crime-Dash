@@ -11,7 +11,14 @@ library(rgdal)
 library(raster)
 library(shiny)
 library(lubridate)
+library(ggplot2)
+library(patchwork)
 library(RColorBrewer)
+library(shinydashboard)
+
+source('./R/crimeplot.fun.R')
+source('./R/app.R')
+
 ```
 
 ## New Haven Crime Data
@@ -22,13 +29,16 @@ Today we will map the data in 2 ways: by point and by neighborhood
 First we need to import the shape file into R using the shapefile() function. This has neighborhood boundaries for all cities in Connecticut and was donwloaded from the Zillow website.
 
 ```{r}
-shp1 <- readRDS('nh.shp.save.rds')
+shp1 <- readRDS('./Data/nh.shp.save.rds')
 shp.nhv<-shp1[shp1$City=="New Haven",] #subset to only include New Haven
+
+shp.nhv2 <- fortify(shp.nhv)
+
 ```
 
 ## read in the data
 ```{r}
-n2<-readRDS('nh.crime.cleaned.rds')
+n2<-readRDS('./Data/nh.crime.cleaned.rds')
 ```
 
 
@@ -48,11 +58,20 @@ red.trans<-rgb(1, #Red (between 0 and 1)
                0, #Blue (between  and 1)
                alpha=1  #between 0 and 1--controls transparency
                )
-plot(shp.nhv  ) #plot the borders
-points(n2$x.jit, n2$y.jit,  
-     col=red.trans, #transparent red color
-     cex=0.5, #Size of the markers
-     pch=16) #shape of the markers
+
+
+p1a <- ggplot(n2, aes(x=x.jit, y=y.jit)) +
+  geom_point( col='red',
+              alpha=0.1,
+              cex=0.5, #Size of the markers
+              pch=16) +
+    theme_void()+ #turns off axes
+  ggtitle('Location of Crimes')
+  
+p1 <-  p1a+ 
+      geom_polygon(data=shp.nhv2, aes(x=long, y=lat, group=group), fill=NA, colour='black', alpha=0) 
+
+p1
 ```
 
 ## Just look at a subset of the crimes. 
@@ -63,20 +82,20 @@ sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
 ```
 
 ```{r}
-red.trans<-rgb(1,0,0,
-               alpha=1 #Adjust transparency
-               )
-plot(shp.nhv)
-points(sub1$x.jit, sub1$y.jit, 
-     col=red.trans, 
-     cex=0.5,
-     pch=16)
+p1 <- crimeplot.fun(select.crimes="DISORDERLY CONDUCT",
+                    opacity1=0.1)
 ```
 
 ## Let's also look at the time of the crime
 ```{r}
-sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
+sub1 <- n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
 hist(sub1$Hr)
+
+p2 <- ggplot(sub1, aes(x=Hr)) + 
+  geom_histogram(binwidth=1)+
+  theme_classic()+
+  ggtitle('Time of Crime') +
+  xlab('Time of Day')
 ```
 
 #And finally the date--can aggregate by day or week or month
@@ -97,25 +116,27 @@ Round date to 'day' or 'week'
 
 Use aggregate to count number of incidents per unit of time
 ```{r}
-    sub1$one<-1
-    sub2<-aggregate(sub1$one, by=list('date.week'=sub1$date.week), FUN=sum)
+sub2 <- sub1 %>%
+    group_by(date.week) %>%
+    summarize(N_crimes=n())
+sub2 <- sub2[!is.na(sub2$date.week),]
 ```
 
 ```{r}
-    plot(sub2$date.week, sub2$x, type='l', bty='l') ##hmm..what could have caused the spike in disorderly conduct mid-March 2014?
-    
+p3 <- ggplot(sub2, aes(x=date.week, y=N_crimes))+
+  geom_line() +
+  theme_classic() +
+  ylab('N crimes')+
+  xlab('Date')
+   ##hmm..what could have caused the spike in disorderly conduct mid-March 2014?
+    p3
 ```
 
-## Side note: Map by area
-Let's also try to map by neighborhood.
-What is an appropriate denominator here? The resident population? The working population? Number of people frequenting the area?
+#lets combine them
+Patchwork package makes this easy
+```{r, fig.width=5, fig.height=4}
 
-```{r}
-sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
-sub1$one<-1
-sub2<-aggregate(sub1$one, by=list('nhood'=sub1$Neighborho), FUN=sum)
-sub2$nhood
-sub2
+(p1+ plot_spacer())/( p2+p3)
 ```
 
 ## Making an interactive plot
@@ -264,8 +285,12 @@ server <- function(input, output) {
     sub1<-n2[n2$NIBRS_Offe==input$crime,]
    
     #Make a histogram to be plotted
-    hist(sub1$Hr)
-
+    p2 <- ggplot(sub1, aes(x=Hr)) + 
+      geom_histogram(binwidth=1)+
+      theme_classic()+
+      ggtitle('Time of Crime') +
+      xlab('Time of Day')
+    p2
     })
 }
 shinyApp(ui, server)
@@ -302,19 +327,14 @@ server <- function(input, output) {
   output$crimePlot <- renderPlot({ #Saves an object called 'crimePlot' that we can plot in the UI
     
     #Subset the full dataset based on the dropdown menu selection
-    sub1<-n2[n2$NIBRS_Offe==input$crime,]
-    
     #Set the opacity level based on the slider value
-    red.trans<-rgb(1,0,0,alpha=input$opacity)
-    
+
     #All of this is the same as what we had before
-    plot(shp.nhv)
-    points(sub1$x.jit, sub1$y.jit, 
-       col=red.trans, 
-       cex=0.5,
-       pch=16)
-    
+    p1 <- crimeplot.fun(select.crimes=input$crime,
+                    opacity1=input$opacity)
+    p1
     })
+  
 }
 shinyApp(ui, server)
 ```
@@ -354,33 +374,30 @@ server <- function(input, output) {
     sub1<-n2[n2$NIBRS_Offe==input$crime,]
     
     #Set the opacity level based on the slider value
-    red.trans<-rgb(1,0,0,alpha=input$opacity)
-    
-    #Controls the size and placements of the plots--2x6 grid; plot 1 take
-    #up both rows and first 4 columns; plot 2 takes 2 columns and 1 row,
-   # plot 3 takes up 2 columns and 2nd row
-    layout.mat <- matrix(c(1,1,1,1,2,2,
-                1,1,1,1,3,3), nrow = 2, byrow = TRUE)
-    layout(layout.mat) #says we want to use the layout defined above
-
-    #All of this is the same as what we had before
-    #Map
-    plot(shp.nhv)
-    points(sub1$x.jit, sub1$y.jit, 
-       col=red.trans, 
-       cex=0.5,
-       pch=16)
-
-    #Histogram of time
-    hist(sub1$Hr, main='Time of Crime')
-    
-    #Plot of date
+  p1 <- crimeplot.fun(select.crimes=input$crime,
+                    opacity1=input$opacity)
   
-    sub1$date1<-as.Date(sub1$Date_Occur, '%m/%d/%Y')
-    sub1$date.week<-floor_date( sub1$date1, unit=input$time.agg)
-    sub1$one<-1
-    sub2<-aggregate(sub1$one, by=list('date.week'=sub1$date.week), FUN=sum)
-    plot(sub2$date.week, sub2$x, type='l', bty='l')
+  p2 <- ggplot(sub1, aes(x=Hr)) + 
+      geom_histogram(binwidth=1)+
+      theme_classic()+
+      ggtitle('Time of Crime') +
+      xlab('Time of Day')
+  
+    sub1$Date_Occur <- as.Date(sub1$Date_Occur, '%m/%d/%Y')
+  sub1$date.week <- floor_date( sub1$Date_Occur, unit=input$time.agg)
+
+  sub2 <- sub1 %>%
+    group_by(date.week) %>%
+    summarize(N_crimes=n())
+sub2 <- sub2[!is.na(sub2$date.week),]
+
+   p3 <- ggplot(sub2, aes(x=date.week, y=N_crimes))+
+  geom_line() +
+  theme_classic() +
+  ylab('N crimes')+
+  xlab('Date')
+   
+(p1+ plot_spacer())/( p2+p3)
 
     
       })
@@ -388,7 +405,9 @@ server <- function(input, output) {
 shinyApp(ui, server)
 ```
 
+To get a nicer layout, you can use the ShinyDashboard app. This has all sorts of advanced layouts, like tabs. You can open app.R and launch from there
 ```{r}
-# runApp("~/shinyapp")
+runApp(app2)
+
 ```
 
