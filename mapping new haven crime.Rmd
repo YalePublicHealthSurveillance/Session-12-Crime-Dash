@@ -1,0 +1,394 @@
+---
+title: "Visualizing crime in New Haven"
+author: "Dan Weinberger"
+date: "April 27, 2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rgdal)
+library(raster)
+library(shiny)
+library(lubridate)
+library(RColorBrewer)
+```
+
+## New Haven Crime Data
+These data were provided by Mark Abraham at DataHaven (info@ctdatahaven.org ). *These data are not for public dissemination. If you would like to use the data outside of class, please contact Mark directly*. These data on crime in New Haven cover the period 2013-2015 are collected by the New Haven police department Each crime receives a Uniform Crime Reporting (UCR) code--basically the ICD of the police world. The full dataset is extremely detailed, with every crime reported in the city, with information on address, latitude and longitude, census tract, time and date of the event, and the crime committed. I have gone through and made some modifications to the data: I dropped variables we don't need, I am only including a subset of the crimes, and I am 'jittering' the coordinates of each event by a random amount in each direction for privacy purposes.  
+
+## Mapping
+Today we will map the data in 2 ways: by point and by neighborhood
+First we need to import the shape file into R using the shapefile() function. This has neighborhood boundaries for all cities in Connecticut and was donwloaded from the Zillow website.
+
+```{r}
+shp1 <- readRDS('nh.shp.save.rds')
+shp.nhv<-shp1[shp1$City=="New Haven",] #subset to only include New Haven
+```
+
+## read in the data
+```{r}
+n2<-readRDS('nh.crime.cleaned.rds')
+```
+
+
+## Explore the data
+```{r}
+str(n2)
+View(n2)
+```
+
+
+Just like we did earlier, we are going to map the points This is all of the crimes in our dataset. Play around with alpha to get a good level of transparency
+
+```{r}
+par(mfrow=c(1,1))
+red.trans<-rgb(1, #Red (between 0 and 1)
+               0, #Green (between 0 and 1)
+               0, #Blue (between  and 1)
+               alpha=1  #between 0 and 1--controls transparency
+               )
+plot(shp.nhv  ) #plot the borders
+points(n2$x.jit, n2$y.jit,  
+     col=red.trans, #transparent red color
+     cex=0.5, #Size of the markers
+     pch=16) #shape of the markers
+```
+
+## Just look at a subset of the crimes. 
+View the vector of crimes in our database, and select which we want to view
+```{r}
+unique(n2$NIBRS_Offe)
+sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
+```
+
+```{r}
+red.trans<-rgb(1,0,0,
+               alpha=1 #Adjust transparency
+               )
+plot(shp.nhv)
+points(sub1$x.jit, sub1$y.jit, 
+     col=red.trans, 
+     cex=0.5,
+     pch=16)
+```
+
+## Let's also look at the time of the crime
+```{r}
+sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
+hist(sub1$Hr)
+```
+
+#And finally the date--can aggregate by day or week or month
+Play around with aggregation level
+```{r}
+sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
+```
+
+Tell R the date is a date variable
+```{r}
+  sub1$date1<-as.Date(sub1$Date_Occur, '%m/%d/%Y')
+```
+
+Round date to 'day' or 'week'
+```{r}
+    sub1$date.week<-floor_date( sub1$date1, unit='day')
+```
+
+Use aggregate to count number of incidents per unit of time
+```{r}
+    sub1$one<-1
+    sub2<-aggregate(sub1$one, by=list('date.week'=sub1$date.week), FUN=sum)
+```
+
+```{r}
+    plot(sub2$date.week, sub2$x, type='l', bty='l') ##hmm..what could have caused the spike in disorderly conduct mid-March 2014?
+    
+```
+
+## Side note: Map by area
+Let's also try to map by neighborhood.
+What is an appropriate denominator here? The resident population? The working population? Number of people frequenting the area?
+
+```{r}
+sub1<-n2[n2$NIBRS_Offe=='DISORDERLY CONDUCT',]
+sub1$one<-1
+sub2<-aggregate(sub1$one, by=list('nhood'=sub1$Neighborho), FUN=sum)
+sub2$nhood
+sub2
+```
+
+## Making an interactive plot
+RShiny (shiny package) provides a way to transform your R code into interactive visualizations with relatively little effort. Wow your employers with your wizardry... 
+There is a great gallery of examples with code you can modify here: https://shiny.rstudio.com/gallery/
+
+There are 2 components to a Shiny app: a user interface (UI) and a server. The UI controls how everything is laid out, how it looks, and what options are available to the user. The server is the business end and runs analyses (if any) generates the plots, etc.
+
+#Let's figure out the layout.
+first the UI:
+```{r}
+ui <- pageWithSidebar(
+
+  # App title ----
+  headerPanel("YOUR TITLE HERE"),
+
+  # Sidebar panel for inputs--these can be sliders, dropdown menus, etc
+  sidebarPanel(
+      # Input: Selector for variable to plot against mpg ----
+      selectInput("crime", "Select Crime:", 
+                c('Crime 1', 'Crime 2'))
+  ),
+
+  # Main panel for displaying outputs ----
+  mainPanel(
+
+      )
+)
+```
+
+Then the 'server'...doesn't do anything yet
+```{r}
+server <- function(input, output) {
+  
+}
+```
+
+Then Call the app
+```{r}
+shinyApp(ui, server)
+```
+
+## Add a slider for opacity of the points
+
+```{r}
+ui <- pageWithSidebar(
+
+  # App title ----
+  headerPanel("YOUR TITLE HERE"),
+
+  # Sidebar panel for inputs--these can be sliders, dropdown menus, etc
+  sidebarPanel(
+      # Input: Selector for variable to plot against mpg ----
+      selectInput("crime", "Select Crime:", 
+                c('Crime 1', 'Crime 2')),
+                
+      sliderInput("opacity", "Opacity:", 
+                min=0, max=1, value=0.02)
+  ),
+
+  # Main panel for displaying outputs ----
+  mainPanel(
+
+      )
+)
+```
+
+Now the server
+```{r}
+server <- function(input, output) {
+  
+}
+```
+
+Call the app
+```{r}
+shinyApp(ui, server)
+```
+
+## Have the dropdown menu fill with the actual crimes
+And change the title
+```{r}
+crime.vector<- unique(n2$NIBRS_Offe) #generate a vector with all of the crimes listed
+ui <- pageWithSidebar(
+
+  # App title ----
+  headerPanel("New Haven Crime Statistics"),
+
+  # Sidebar panel for inputs--these can be sliders, dropdown menus, etc
+  sidebarPanel(
+      # Input: Selector for variable to plot against mpg ----
+      selectInput("crime", "Select Crime:", 
+                crime.vector),
+                
+      sliderInput("opacity", "Opacity:", 
+                min=0, max=1, value=0.02)
+  ),
+
+  # Main panel for displaying outputs ----
+  mainPanel(
+
+      )
+)
+
+server <- function(input, output) {
+  
+}
+shinyApp(ui, server)
+```
+
+## Ok it looks good, now let's make it do something
+To have it do anything, we need to set up the server code. We are basically just going to cut and paste the map code from above and make some of the variables dynamic. In the server, you access the input values that you selected on the UI using input$VARNAME, where varname is the name of the slider/dropdown/etc. 
+
+It is saving an output called "crimePlot" that can be accessed by the UI by saving the plot to output$crimePlot. 
+To make the output appear, add the the plotOutput("crimePlot") statement in the mainPanel
+
+```{r}
+crime.vector<-unique(n2$NIBRS_Offe) 
+ui <- pageWithSidebar(
+
+  # App title ----
+  headerPanel("New Haven Crime Statistics"),
+
+  # Sidebar panel for inputs--these can be sliders, dropdown menus, etc
+  sidebarPanel(
+      # Input: Selector for variable to plot against mpg ----
+      selectInput("crime", "Select Crime:", 
+                crime.vector),
+                
+      sliderInput("opacity", "Opacity:", 
+                min=0, max=1, value=0.02)
+  ),
+
+  # Main panel for displaying outputs ----
+  mainPanel(
+    plotOutput("crimePlot")
+      )
+)
+
+server <- function(input, output) {
+  
+  #The inputs from the dropdown and slider get saved in an object called 'input'. We can refer to these objects anywhere between the curly brackets  below to dynamically change the plots
+  output$crimePlot <- renderPlot({ #Saves an object called 'crimePlot' that we can plot in the UI
+    
+    #Subset the full dataset based on the dropdown menu selection
+    sub1<-n2[n2$NIBRS_Offe==input$crime,]
+   
+    #Make a histogram to be plotted
+    hist(sub1$Hr)
+
+    })
+}
+shinyApp(ui, server)
+```
+
+## Same thing with a map
+```{r}
+crime.vector<-unique(n2$NIBRS_Offe) 
+ui <- pageWithSidebar(
+
+  # App title ----
+  headerPanel("New Haven Crime Statistics"),
+
+  # Sidebar panel for inputs--these can be sliders, dropdown menus, etc
+  sidebarPanel(
+      # Input: Selector for variable to plot against mpg ----
+      selectInput("crime", "Select Crime:", 
+                crime.vector),
+                
+      sliderInput("opacity", "Opacity:", 
+                min=0, max=1, value=0.02)
+  ),
+
+  # Main panel for displaying outputs ----
+  mainPanel(
+    plotOutput("crimePlot")
+
+      )
+)
+
+server <- function(input, output) {
+  
+  #The inputs from the dropdown and slider get saved in an object called 'input'. We can refer to these objects anywhere between the curly brackets  below to dynamically change the plots
+  output$crimePlot <- renderPlot({ #Saves an object called 'crimePlot' that we can plot in the UI
+    
+    #Subset the full dataset based on the dropdown menu selection
+    sub1<-n2[n2$NIBRS_Offe==input$crime,]
+    
+    #Set the opacity level based on the slider value
+    red.trans<-rgb(1,0,0,alpha=input$opacity)
+    
+    #All of this is the same as what we had before
+    plot(shp.nhv)
+    points(sub1$x.jit, sub1$y.jit, 
+       col=red.trans, 
+       cex=0.5,
+       pch=16)
+    
+    })
+}
+shinyApp(ui, server)
+```
+
+
+#And let's just get fancy and combine together histograms for time and date and map...
+```{r}
+crime.vector<-unique(n2$NIBRS_Offe) 
+ui <- pageWithSidebar(
+
+  # App title ----
+  headerPanel("New Haven Crime Statistics"),
+
+  # Sidebar panel for inputs--these can be sliders, dropdown menus, etc
+  sidebarPanel(
+      # Input: Selector for variable to plot against mpg ----
+      selectInput("crime", "Select Crime:", 
+                crime.vector),
+      selectInput("time.agg", "Time aggregation:", 
+                c('day','week','month')),
+      sliderInput("opacity", "Opacity:", 
+                min=0, max=1, value=0.02)
+  ),
+
+  # Main panel for displaying outputs ----
+  mainPanel(
+    plotOutput("crimePlot")
+      )
+)
+
+server <- function(input, output) {
+  
+  #The inputs from the dropdown and slider get saved in an object called 'input'. We can refer to these objects anywhere between the curly brackets  below to dynamically change the plots
+  output$crimePlot <- renderPlot({ #Saves an object called 'crimePlot' that we can plot in the UI
+    
+    #Subset the full dataset based on the dropdown menu selection
+    sub1<-n2[n2$NIBRS_Offe==input$crime,]
+    
+    #Set the opacity level based on the slider value
+    red.trans<-rgb(1,0,0,alpha=input$opacity)
+    
+    #Controls the size and placements of the plots--2x6 grid; plot 1 take
+    #up both rows and first 4 columns; plot 2 takes 2 columns and 1 row,
+   # plot 3 takes up 2 columns and 2nd row
+    layout.mat <- matrix(c(1,1,1,1,2,2,
+                1,1,1,1,3,3), nrow = 2, byrow = TRUE)
+    layout(layout.mat) #says we want to use the layout defined above
+
+    #All of this is the same as what we had before
+    #Map
+    plot(shp.nhv)
+    points(sub1$x.jit, sub1$y.jit, 
+       col=red.trans, 
+       cex=0.5,
+       pch=16)
+
+    #Histogram of time
+    hist(sub1$Hr, main='Time of Crime')
+    
+    #Plot of date
+  
+    sub1$date1<-as.Date(sub1$Date_Occur, '%m/%d/%Y')
+    sub1$date.week<-floor_date( sub1$date1, unit=input$time.agg)
+    sub1$one<-1
+    sub2<-aggregate(sub1$one, by=list('date.week'=sub1$date.week), FUN=sum)
+    plot(sub2$date.week, sub2$x, type='l', bty='l')
+
+    
+      })
+}
+shinyApp(ui, server)
+```
+
+```{r}
+# runApp("~/shinyapp")
+```
+
