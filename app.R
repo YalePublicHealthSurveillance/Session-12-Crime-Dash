@@ -1,4 +1,20 @@
+library(rgdal)
+library(raster)
+library(shiny)
+library(lubridate)
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(RColorBrewer)
 library(shinydashboard)
+source('./R/crimeplot.fun.R')
+
+n2 <- readRDS('./Data/nh.crime.cleaned.rds')
+crime.vector<- unique(n2$NIBRS_Offe)
+shp1 <- readRDS('./Data/nh.shp.save.rds')
+shp.nhv<-shp1[shp1$City=="New Haven",] #subset to only include New Haven
+
+shp.nhv2 <- fortify(shp.nhv)
 
 app2 <- shinyApp(
   
@@ -24,9 +40,10 @@ app2 <- shinyApp(
   ), 
   
   server = function(input, output) {
-    
     output$map1 = renderPlot({
-      p1 <- crimeplot.fun(select.crimes=input$crime,
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      
+      p1 <- crimeplot.fun(ds=sub1,select.crimes=input$crime,
                           opacity1=input$opacity)
       p1
     })
