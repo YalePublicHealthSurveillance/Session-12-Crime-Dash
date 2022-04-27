@@ -12,9 +12,11 @@ library(raster)
 library(shiny)
 library(lubridate)
 library(ggplot2)
+library(plotly)
 library(patchwork)
 library(RColorBrewer)
 library(shinydashboard)
+library(dplyr)
 
 source('./R/crimeplot.fun.R')
 source('./app.R')
@@ -124,6 +126,12 @@ p3 <- ggplot(sub2, aes(x=date.week, y=N_crimes))+
    ##hmm..what could have caused the spike in disorderly conduct mid-March 2014?
     p3
 ```
+Make it interactive using plotly
+
+```{r}
+ggplotly(p3)
+```
+
 
 #lets combine them
 Patchwork package makes this easy
@@ -463,9 +471,154 @@ server = function(input, output) {
 shinyApp(ui, server)
 ```
 
-To get a nicer layout, you can use the ShinyDashboard app. This has all sorts of advanced layouts, like tabs. You can open app.R and launch from there
+## Add a value box
 ```{r}
-runApp(app2)
-
+ ui = dashboardPage(
+    
+    dashboardHeader(title = "New Haven Crime Statistics",titleWidth=500),
+    
+    dashboardSidebar(
+        selectInput("crime", "Select Crime:", 
+                    crime.vector),
+        selectInput("time.agg", "Time aggregation:", 
+                    c('day','week','month')),
+        sliderInput("opacity", "Opacity:", 
+                    min=0, max=1, value=0.02)
+      ),
+    dashboardBody(
+                       box(tabPanel("Map", plotOutput("map1"))),
+                    box(tabPanel("Time", plotOutput("plot_time"))),
+                    box(tabPanel("Date", plotOutput("plot_date"))),
+      # Dynamic valueBoxes
+      valueBoxOutput("TallyBox"),
+      )
+  )
+  
+#SERVER
+server = function(input, output) {
+    output$map1 = renderPlot({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      
+      p1 <- crimeplot.fun(ds=sub1,
+                          opacity1=input$opacity)
+      p1
+    })
+    
+    output$plot_time = renderPlot({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      p2 <- ggplot(sub1, aes(x=Hr)) + 
+        geom_histogram(binwidth=1)+
+        theme_classic()+
+        ggtitle('Time of Crime') +
+        xlab('Time of Day')
+      p2
+    })
+    
+    output$plot_date = renderPlot({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      sub1$Date_Occur <- as.Date(sub1$Date_Occur, '%m/%d/%Y')
+      sub1$date.week <- floor_date( sub1$Date_Occur, unit=input$time.agg)
+      
+      sub2 <- sub1 %>%
+        group_by(date.week) %>%
+        summarize(N_crimes=n())
+      sub2 <- sub2[!is.na(sub2$date.week),]
+      
+      p3 <- ggplot(sub2, aes(x=date.week, y=N_crimes))+
+        geom_line() +
+        theme_classic() +
+        ylab('N crimes')+
+        xlab('Date')
+      p3
+    })
+    
+    #Tally box
+     output$TallyBox <- renderValueBox({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+    valueBox(
+      paste0(nrow(sub1)), input$crime, icon = icon("list"),
+      color = "purple"
+    )
+  })
+      
+  }
+shinyApp(ui, server)
 ```
+## Make plots interactive with plotly
+
+```{r}
+ ui = dashboardPage(
+    
+    dashboardHeader(title = "New Haven Crime Statistics",titleWidth=500),
+    
+    dashboardSidebar(
+        selectInput("crime", "Select Crime:", 
+                    crime.vector),
+        selectInput("time.agg", "Time aggregation:", 
+                    c('day','week','month')),
+        sliderInput("opacity", "Opacity:", 
+                    min=0, max=1, value=0.02)
+      ),
+    dashboardBody(
+      fluidRow(
+      box(tabPanel("Map", plotOutput("map1"))),
+      box(tabPanel("Time", plotOutput("plot_time"))),
+      box(tabPanel("Date", plotlyOutput("plot_date"))),
+      # Dynamic valueBoxes
+      valueBoxOutput("TallyBox"),
+      ))
+  )
+  
+#SERVER
+server = function(input, output) {
+    output$map1 = renderPlot({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      
+      p1 <- crimeplot.fun(ds=sub1,
+                          opacity1=input$opacity)
+      p1
+    })
+    
+    output$plot_time = renderPlot({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      p2 <- ggplot(sub1, aes(x=Hr)) + 
+        geom_histogram(binwidth=1)+
+        theme_classic()+
+        ggtitle('Time of Crime') +
+        xlab('Time of Day')
+      p2
+    })
+    
+    output$plot_date = renderPlotly({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+      sub1$Date_Occur <- as.Date(sub1$Date_Occur, '%m/%d/%Y')
+      sub1$date.week <- floor_date( sub1$Date_Occur, unit=input$time.agg)
+      
+      sub2 <- sub1 %>%
+        group_by(date.week) %>%
+        summarize(N_crimes=n())
+      sub2 <- sub2[!is.na(sub2$date.week),]
+      
+      p3 <- ggplotly(ggplot(sub2, aes(x=date.week, y=N_crimes))+
+        geom_line() +
+        theme_classic() +
+        ylab('N crimes')+
+        xlab('Date')
+      )
+      p3
+    })
+    
+    #Tally box
+     output$TallyBox <- renderValueBox({
+      sub1<-n2[n2$NIBRS_Offe==input$crime,]
+    valueBox(
+      paste0(nrow(sub1)), input$crime, icon = icon("list"),
+      color = "purple"
+    )
+  })
+      
+  }
+shinyApp(ui, server)
+```
+
 
