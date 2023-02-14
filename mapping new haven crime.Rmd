@@ -353,7 +353,7 @@ server <- function(input, output) {
       p2 <- ggplot(sub1, aes(x=Hr)) + 
         geom_histogram(binwidth=1)+
         theme_classic()+
-        ggtitle('Time of Crime') +
+       # ggtitle(paste('Time of Crime for ', input$crime)) +
         xlab('Time of Day')
       p2
     })
